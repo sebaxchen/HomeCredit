@@ -84,6 +84,11 @@ export function LoginForm({ onToggleForm }: LoginFormProps) {
           </button>
         </form>
 
+        <div className="mt-4 text-sm text-gray-500 text-center">
+          <p>Cuenta demo: asesor@homecredit.pe</p>
+          <p>Contraseña: Demo1234</p>
+        </div>
+
         <div className="mt-6 text-center">
           <p className="text-sm text-gray-600">
             ¿No tienes cuenta?{' '}

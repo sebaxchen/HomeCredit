@@ -15,7 +15,18 @@ type NewPaymentScheduleInput = Omit<
 >;
 type NewProfileInput = Omit<Profile, 'created_at' | 'updated_at'> & { id?: string };
 
+interface MockAuthUser {
+  id: string;
+  email: string;
+  password: string;
+  full_name: string;
+  role: Profile['role'];
+  phone?: string;
+}
+
 const DEMO_USER_ID = 'demo-user';
+const DEMO_USER_EMAIL = 'asesor@homecredit.pe';
+const DEMO_USER_PASSWORD = 'Demo1234';
 
 const now = () => new Date().toISOString();
 
@@ -24,18 +35,111 @@ const generateId = (prefix: string) =>
 
 const demoProfileTimestamp = '2024-01-15T10:00:00.000Z';
 
-const profiles: Profile[] = [
+const AUTH_STORAGE_KEY = 'homecredit_mock_auth_users';
+const PROFILES_STORAGE_KEY = 'homecredit_mock_profiles';
+
+const getStorage = () => {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+};
+
+const loadFromStorage = <T>(key: string, fallback: T): T => {
+  const storage = getStorage();
+  if (!storage) return fallback;
+
+  try {
+    const item = storage.getItem(key);
+    if (!item) {
+      storage.setItem(key, JSON.stringify(fallback));
+      return fallback;
+    }
+    return JSON.parse(item) as T;
+  } catch {
+    return fallback;
+  }
+};
+
+const persistToStorage = <T>(key: string, value: T) => {
+  const storage = getStorage();
+  if (!storage) return;
+
+  try {
+    storage.setItem(key, JSON.stringify(value));
+  } catch {
+    // noop
+  }
+};
+
+const defaultProfile: Profile = {
+  id: DEMO_USER_ID,
+  email: DEMO_USER_EMAIL,
+  full_name: 'Asesor Demo',
+  role: 'advisor',
+  company_name: 'HomeCredit Demo',
+  phone: '+51 999 123 456',
+  created_at: demoProfileTimestamp,
+  updated_at: demoProfileTimestamp,
+};
+
+let profiles: Profile[] = loadFromStorage(PROFILES_STORAGE_KEY, [defaultProfile]);
+
+if (!profiles.some((profile) => profile.id === DEMO_USER_ID)) {
+  profiles = [...profiles, defaultProfile];
+  persistToStorage(PROFILES_STORAGE_KEY, profiles);
+}
+
+let authUsers: MockAuthUser[] = loadFromStorage(AUTH_STORAGE_KEY, [
   {
     id: DEMO_USER_ID,
-    email: 'asesor@homecredit.pe',
-    full_name: 'Asesor Demo',
-    role: 'advisor',
-    company_name: 'HomeCredit Demo',
-    phone: '+51 999 123 456',
-    created_at: demoProfileTimestamp,
-    updated_at: demoProfileTimestamp,
+    email: DEMO_USER_EMAIL,
+    password: DEMO_USER_PASSWORD,
+    full_name: defaultProfile.full_name,
+    role: defaultProfile.role,
+    phone: defaultProfile.phone,
   },
-];
+]);
+
+if (!authUsers.some((authUser) => authUser.id === DEMO_USER_ID)) {
+  authUsers = [...authUsers, {
+    id: DEMO_USER_ID,
+    email: DEMO_USER_EMAIL,
+    password: DEMO_USER_PASSWORD,
+    full_name: defaultProfile.full_name,
+    role: defaultProfile.role,
+    phone: defaultProfile.phone,
+  }];
+  persistToStorage(AUTH_STORAGE_KEY, authUsers);
+}
+
+const persistProfiles = () => persistToStorage(PROFILES_STORAGE_KEY, profiles);
+const persistAuthUsers = () => persistToStorage(AUTH_STORAGE_KEY, authUsers);
+
+const ensureProfileForAuthUser = (authUser: MockAuthUser): Profile => {
+  const existingProfile = profiles.find((profile) => profile.id === authUser.id);
+  if (existingProfile) {
+    return existingProfile;
+  }
+
+  const timestamp = now();
+  const newProfile: Profile = {
+    id: authUser.id,
+    email: authUser.email,
+    full_name: authUser.full_name,
+    role: authUser.role,
+    phone: authUser.phone,
+    created_at: timestamp,
+    updated_at: timestamp,
+  };
+
+  profiles.push(newProfile);
+  persistProfiles();
+
+  return newProfile;
+};
 
 const clients: Client[] = [
   {
@@ -213,6 +317,87 @@ const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 export const mockApi = {
   demoUserId: DEMO_USER_ID,
 
+  async signInWithPassword(email: string, password: string) {
+    const normalizedEmail = email.trim().toLowerCase();
+    const authUser = authUsers.find(
+      (user) => user.email.toLowerCase() === normalizedEmail,
+    );
+
+    if (!authUser) {
+      throw new Error('No encontramos una cuenta registrada con este correo electrónico.');
+    }
+
+    if (authUser.password !== password) {
+      throw new Error('La contraseña ingresada es incorrecta.');
+    }
+
+    const profile = ensureProfileForAuthUser(authUser);
+
+    return {
+      user: { id: authUser.id, email: authUser.email },
+      profile: clone(profile),
+    };
+  },
+
+  async signUpWithPassword({
+    email,
+    password,
+    fullName,
+    role = 'advisor',
+    phone,
+  }: {
+    email: string;
+    password: string;
+    fullName: string;
+    role?: Profile['role'];
+    phone?: string;
+  }) {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!normalizedEmail || !password || !fullName.trim()) {
+      throw new Error('Completa todos los campos para registrarte.');
+    }
+
+    const emailAlreadyUsed = authUsers.some(
+      (user) => user.email.toLowerCase() === normalizedEmail,
+    );
+
+    if (emailAlreadyUsed) {
+      throw new Error('Ya existe una cuenta registrada con este correo electrónico.');
+    }
+
+    const id = generateId('user');
+    const timestamp = now();
+
+    const newProfile: Profile = {
+      id,
+      email: normalizedEmail,
+      full_name: fullName.trim(),
+      role,
+      phone: phone ?? '+51 999 000 000',
+      created_at: timestamp,
+      updated_at: timestamp,
+    };
+
+    profiles.push(newProfile);
+    persistProfiles();
+
+    authUsers.push({
+      id,
+      email: normalizedEmail,
+      password,
+      full_name: fullName.trim(),
+      role,
+      phone: phone ?? '+51 999 000 000',
+    });
+    persistAuthUsers();
+
+    return {
+      user: { id, email: normalizedEmail },
+      profile: clone(newProfile),
+    };
+  },
+
   async getProfileByUserId(userId: string | undefined) {
     if (!userId) return null;
     const profile = profiles.find((p) => p.id === userId);
@@ -234,6 +419,7 @@ export const mockApi = {
           ...input,
           updated_at: timestamp,
         };
+        persistProfiles();
         return clone(profiles[index]);
       }
     }
@@ -251,6 +437,7 @@ export const mockApi = {
     };
 
     profiles.push(newProfile);
+    persistProfiles();
     return clone(newProfile);
   },
 

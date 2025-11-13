@@ -40,19 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (parsed.user && parsed.profile) {
             setUser(parsed.user);
             setProfile(parsed.profile);
-            return;
           }
-        }
-
-        const defaultProfile = await mockApi.getProfileByUserId(mockApi.demoUserId);
-        if (defaultProfile) {
-          const defaultUser: AuthUser = {
-            id: defaultProfile.id,
-            email: defaultProfile.email,
-          };
-          setUser(defaultUser);
-          setProfile(defaultProfile);
-          persistSession(defaultUser, defaultProfile);
         }
       } finally {
         if (isMounted) {
@@ -82,16 +70,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error('Ingresa tu correo y contraseña');
       }
 
-      const existingProfile = await mockApi.getProfileByEmail(email);
-      const authProfile =
-        existingProfile ??
-        (await mockApi.upsertProfile({
-          email,
-          full_name: 'Asesor Demo',
-          role: 'advisor',
-        }));
+      const authData = await mockApi.signInWithPassword(email, password);
 
-      const authUser: AuthUser = { id: authProfile.id, email: authProfile.email };
+      const authUser: AuthUser = { id: authData.user.id, email: authData.user.email };
+      const authProfile = authData.profile;
       setUser(authUser);
       setProfile(authProfile);
       persistSession(authUser, authProfile);
@@ -109,18 +91,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     role: Profile['role'] = 'advisor',
   ) => {
     try {
-      if (!email || !password || !fullName) {
-        throw new Error('Completa todos los campos para registrarte');
-      }
-
-      const authProfile = await mockApi.upsertProfile({
+      const authData = await mockApi.signUpWithPassword({
         email,
-        full_name: fullName,
+        password,
+        fullName,
         role,
-        phone: '+51 999 000 000',
       });
 
-      const authUser: AuthUser = { id: authProfile.id, email: authProfile.email };
+      const authUser: AuthUser = { id: authData.user.id, email: authData.user.email };
+      const authProfile = authData.profile;
       setUser(authUser);
       setProfile(authProfile);
       persistSession(authUser, authProfile);
