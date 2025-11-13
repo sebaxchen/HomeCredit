@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { mockApi } from '../../lib/mockApi';
 import { useAuth } from '../../contexts/AuthContext';
-import { CreditSimulation } from '../../types/database';
+import { Client, CreditSimulation, PropertyUnit } from '../../types/database';
 import { Calculator, Eye } from 'lucide-react';
 
 interface SimulationListProps {
@@ -10,7 +10,9 @@ interface SimulationListProps {
 
 export function SimulationList({ onViewDetails }: SimulationListProps) {
   const { user } = useAuth();
-  const [simulations, setSimulations] = useState<any[]>([]);
+  const [simulations, setSimulations] = useState<
+    (CreditSimulation & { clients: Client | null; property_units: PropertyUnit | null })[]
+  >([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -19,20 +21,8 @@ export function SimulationList({ onViewDetails }: SimulationListProps) {
 
   const loadSimulations = async () => {
     try {
-      const { data, error } = await supabase
-        .from('credit_simulations')
-        .select(
-          `
-          *,
-          clients (full_name, document_number),
-          property_units (property_name, unit_number, address)
-        `
-        )
-        .eq('user_id', user?.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setSimulations(data || []);
+      const data = await mockApi.getSimulationsWithRelations(user?.id);
+      setSimulations(data);
     } catch (error) {
       console.error('Error loading simulations:', error);
     } finally {

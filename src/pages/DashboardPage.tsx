@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { mockApi } from '../lib/mockApi';
 import { useAuth } from '../contexts/AuthContext';
 import { Users, Building2, Calculator, TrendingUp } from 'lucide-react';
 
@@ -19,33 +19,8 @@ export function DashboardPage() {
 
   const loadStats = async () => {
     try {
-      const [clientsResult, propertiesResult, simulationsResult, availableResult] =
-        await Promise.all([
-          supabase
-            .from('clients')
-            .select('id', { count: 'exact', head: true })
-            .eq('user_id', user?.id),
-          supabase
-            .from('property_units')
-            .select('id', { count: 'exact', head: true })
-            .eq('user_id', user?.id),
-          supabase
-            .from('credit_simulations')
-            .select('id', { count: 'exact', head: true })
-            .eq('user_id', user?.id),
-          supabase
-            .from('property_units')
-            .select('id', { count: 'exact', head: true })
-            .eq('user_id', user?.id)
-            .eq('status', 'available'),
-        ]);
-
-      setStats({
-        clients: clientsResult.count || 0,
-        properties: propertiesResult.count || 0,
-        simulations: simulationsResult.count || 0,
-        availableProperties: availableResult.count || 0,
-      });
+      const statsData = await mockApi.getStats(user?.id);
+      setStats(statsData);
     } catch (error) {
       console.error('Error loading stats:', error);
     } finally {

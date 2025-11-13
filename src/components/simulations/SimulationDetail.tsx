@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { mockApi } from '../../lib/mockApi';
 import { CreditSimulation, PaymentSchedule, Client, PropertyUnit } from '../../types/database';
 import { X, TrendingUp, TrendingDown, DollarSign } from 'lucide-react';
 
@@ -21,32 +21,25 @@ export function SimulationDetail({ simulationId, onClose }: SimulationDetailProp
 
   const loadSimulationData = async () => {
     try {
-      const { data: simData, error: simError } = await supabase
-        .from('credit_simulations')
-        .select('*')
-        .eq('id', simulationId)
-        .single();
-
-      if (simError) throw simError;
+      const simData = await mockApi.getSimulationById(simulationId);
+      if (!simData) {
+        throw new Error('Simulación no encontrada');
+      }
       setSimulation(simData);
 
-      const [scheduleResult, clientResult, propertyResult] = await Promise.all([
-        supabase
-          .from('payment_schedules')
-          .select('*')
-          .eq('simulation_id', simulationId)
-          .order('period_number'),
-        supabase.from('clients').select('*').eq('id', simData.client_id).single(),
-        supabase.from('property_units').select('*').eq('id', simData.property_id).single(),
+      const [scheduleData, clientData, propertyData] = await Promise.all([
+        mockApi.getPaymentSchedule(simulationId),
+        mockApi.getClientById(simData.client_id),
+        mockApi.getPropertyById(simData.property_id),
       ]);
 
-      if (scheduleResult.error) throw scheduleResult.error;
-      if (clientResult.error) throw clientResult.error;
-      if (propertyResult.error) throw propertyResult.error;
+      if (!clientData || !propertyData) {
+        throw new Error('Información relacionada incompleta');
+      }
 
-      setSchedule(scheduleResult.data || []);
-      setClient(clientResult.data);
-      setProperty(propertyResult.data);
+      setSchedule(scheduleData);
+      setClient(clientData);
+      setProperty(propertyData);
     } catch (error) {
       console.error('Error loading simulation:', error);
     } finally {

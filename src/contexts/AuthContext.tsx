@@ -1,94 +1,129 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { User } from '@supabase/supabase-js';
-import { supabase } from '../lib/supabase';
+import { mockApi } from '../lib/mockApi';
 import { Profile } from '../types/database';
 
 interface AuthContextType {
-  user: User | null;
+  user: AuthUser | null;
   profile: Profile | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signUp: (email: string, password: string, fullName: string, role?: string) => Promise<{ error: Error | null }>;
+  signUp: (
+    email: string,
+    password: string,
+    fullName: string,
+    role?: Profile['role']
+  ) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
+}
+
+interface AuthUser {
+  id: string;
+  email: string;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        loadProfile(session.user.id);
-      } else {
-        setLoading(false);
-      }
-    });
+    let isMounted = true;
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      (async () => {
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          await loadProfile(session.user.id);
-        } else {
-          setProfile(null);
+    const loadInitialSession = async () => {
+      try {
+        const stored = typeof window !== 'undefined' ? window.localStorage.getItem('homecredit_auth_session') : null;
+
+        if (stored) {
+          const parsed = JSON.parse(stored) as { user: AuthUser; profile: Profile };
+          if (parsed.user && parsed.profile) {
+            setUser(parsed.user);
+            setProfile(parsed.profile);
+            return;
+          }
+        }
+
+        const defaultProfile = await mockApi.getProfileByUserId(mockApi.demoUserId);
+        if (defaultProfile) {
+          const defaultUser: AuthUser = {
+            id: defaultProfile.id,
+            email: defaultProfile.email,
+          };
+          setUser(defaultUser);
+          setProfile(defaultProfile);
+          persistSession(defaultUser, defaultProfile);
+        }
+      } finally {
+        if (isMounted) {
           setLoading(false);
         }
-      })();
-    });
+      }
+    };
 
-    return () => subscription.unsubscribe();
+    loadInitialSession();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  const loadProfile = async (userId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
-
-      if (error) throw error;
-      setProfile(data);
-    } catch (error) {
-      console.error('Error loading profile:', error);
-    } finally {
-      setLoading(false);
-    }
+  const persistSession = (authUser: AuthUser, authProfile: Profile) => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(
+      'homecredit_auth_session',
+      JSON.stringify({ user: authUser, profile: authProfile }),
+    );
   };
 
   const signIn = async (email: string, password: string) => {
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
+      if (!email || !password) {
+        throw new Error('Ingresa tu correo y contraseña');
+      }
+
+      const existingProfile = await mockApi.getProfileByEmail(email);
+      const authProfile =
+        existingProfile ??
+        (await mockApi.upsertProfile({
+          email,
+          full_name: 'Asesor Demo',
+          role: 'advisor',
+        }));
+
+      const authUser: AuthUser = { id: authProfile.id, email: authProfile.email };
+      setUser(authUser);
+      setProfile(authProfile);
+      persistSession(authUser, authProfile);
+
       return { error: null };
     } catch (error) {
       return { error: error as Error };
     }
   };
 
-  const signUp = async (email: string, password: string, fullName: string, role: string = 'advisor') => {
+  const signUp = async (
+    email: string,
+    password: string,
+    fullName: string,
+    role: Profile['role'] = 'advisor',
+  ) => {
     try {
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-      });
+      if (!email || !password || !fullName) {
+        throw new Error('Completa todos los campos para registrarte');
+      }
 
-      if (authError) throw authError;
-      if (!authData.user) throw new Error('No user returned');
-
-      const { error: profileError } = await supabase.from('profiles').insert({
-        id: authData.user.id,
+      const authProfile = await mockApi.upsertProfile({
         email,
         full_name: fullName,
         role,
+        phone: '+51 999 000 000',
       });
 
-      if (profileError) throw profileError;
+      const authUser: AuthUser = { id: authProfile.id, email: authProfile.email };
+      setUser(authUser);
+      setProfile(authProfile);
+      persistSession(authUser, authProfile);
 
       return { error: null };
     } catch (error) {
@@ -97,8 +132,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    await mockApi.clearAuthSession();
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem('homecredit_auth_session');
+    }
     setProfile(null);
+    setUser(null);
   };
 
   return (

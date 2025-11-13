@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { mockApi } from '../../lib/mockApi';
 import { useAuth } from '../../contexts/AuthContext';
 import { X } from 'lucide-react';
 
@@ -30,12 +30,11 @@ export function ClientForm({ onClose, onSuccess }: ClientFormProps) {
     setLoading(true);
 
     try {
-      const { error: insertError } = await supabase.from('clients').insert({
-        ...formData,
-        user_id: user?.id,
-      });
+      if (!user?.id) {
+        throw new Error('No se encontró un usuario activo');
+      }
 
-      if (insertError) throw insertError;
+      await mockApi.createClient(user.id, formData);
 
       onSuccess();
       onClose();

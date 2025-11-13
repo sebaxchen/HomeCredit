@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
+import { mockApi } from '../../lib/mockApi';
 import { useAuth } from '../../contexts/AuthContext';
 import { Client, PropertyUnit } from '../../types/database';
 import { X } from 'lucide-react';
@@ -39,20 +39,13 @@ export function SimulationForm({ onClose, onSuccess }: SimulationFormProps) {
 
   const loadClientsAndProperties = async () => {
     try {
-      const [clientsResult, propertiesResult] = await Promise.all([
-        supabase.from('clients').select('*').eq('user_id', user?.id),
-        supabase
-          .from('property_units')
-          .select('*')
-          .eq('user_id', user?.id)
-          .eq('status', 'available'),
+      const [clientsData, propertiesData] = await Promise.all([
+        mockApi.getClients(user?.id),
+        mockApi.getProperties(user?.id),
       ]);
 
-      if (clientsResult.error) throw clientsResult.error;
-      if (propertiesResult.error) throw propertiesResult.error;
-
-      setClients(clientsResult.data || []);
-      setProperties(propertiesResult.data || []);
+      setClients(clientsData);
+      setProperties(propertiesData.filter((property) => property.status === 'available'));
     } catch (err) {
       console.error('Error loading data:', err);
     }
@@ -71,6 +64,7 @@ export function SimulationForm({ onClose, onSuccess }: SimulationFormProps) {
 
     try {
       if (!selectedProperty) throw new Error('Selecciona una propiedad');
+      if (!user?.id) throw new Error('No se encontró un usuario activo');
 
       const property_price = selectedProperty.price;
       const loan_amount =
@@ -94,47 +88,45 @@ export function SimulationForm({ onClose, onSuccess }: SimulationFormProps) {
         insurance_rate: formData.insurance_rate,
       });
 
-      const { data: simulationData, error: simulationError } = await supabase
-        .from('credit_simulations')
-        .insert({
-          user_id: user?.id,
-          client_id: formData.client_id,
-          property_id: formData.property_id,
-          property_price,
-          initial_payment: formData.initial_payment,
-          loan_amount,
-          techo_propio_bonus: formData.techo_propio_bonus,
-          currency: selectedProperty.currency,
-          interest_rate_type: formData.interest_rate_type,
-          annual_interest_rate: formData.annual_interest_rate,
-          capitalization:
-            formData.interest_rate_type === 'nominal' ? formData.capitalization : null,
-          loan_term_years: formData.loan_term_years,
-          grace_period_type: formData.grace_period_type,
-          grace_period_months: formData.grace_period_months,
-          insurance_rate: formData.insurance_rate,
-          van: calculationResult.van,
-          tir: calculationResult.tir,
-          tea: calculationResult.tea,
-          tcea: calculationResult.tcea,
-        })
-        .select()
-        .single();
+      const simulation = await mockApi.createSimulation({
+        user_id: user.id,
+        client_id: formData.client_id,
+        property_id: formData.property_id,
+        property_price,
+        initial_payment: formData.initial_payment,
+        loan_amount,
+        techo_propio_bonus: formData.techo_propio_bonus,
+        currency: selectedProperty.currency,
+        interest_rate_type: formData.interest_rate_type,
+        annual_interest_rate: formData.annual_interest_rate,
+        capitalization:
+          formData.interest_rate_type === 'nominal' ? formData.capitalization : undefined,
+        loan_term_years: formData.loan_term_years,
+        grace_period_type: formData.grace_period_type,
+        grace_period_months: formData.grace_period_months,
+        insurance_rate: formData.insurance_rate,
+        van: calculationResult.van,
+        tir: calculationResult.tir,
+        tea: calculationResult.tea,
+        tcea: calculationResult.tcea,
+      });
 
-      if (simulationError) throw simulationError;
+      await mockApi.createPaymentSchedules(
+        simulation.id,
+        calculationResult.payment_schedule.map((item) => ({
+          period_number: item.period_number,
+          payment_date: item.payment_date,
+          beginning_balance: item.beginning_balance,
+          principal_payment: item.principal_payment,
+          interest_payment: item.interest_payment,
+          insurance_payment: item.insurance_payment,
+          total_payment: item.total_payment,
+          ending_balance: item.ending_balance,
+          grace_period: item.grace_period,
+        })),
+      );
 
-      const scheduleInserts = calculationResult.payment_schedule.map((item) => ({
-        simulation_id: simulationData.id,
-        ...item,
-      }));
-
-      const { error: scheduleError } = await supabase
-        .from('payment_schedules')
-        .insert(scheduleInserts);
-
-      if (scheduleError) throw scheduleError;
-
-      onSuccess(simulationData.id);
+      onSuccess(simulation.id);
       onClose();
     } catch (err: any) {
       setError(err.message || 'Error al crear simulación');

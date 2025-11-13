@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { mockApi } from '../../lib/mockApi';
 import { useAuth } from '../../contexts/AuthContext';
 import { PropertyUnit } from '../../types/database';
 import { Home, MapPin, Ruler } from 'lucide-react';
@@ -15,14 +15,8 @@ export function PropertyList() {
 
   const loadProperties = async () => {
     try {
-      const { data, error } = await supabase
-        .from('property_units')
-        .select('*')
-        .eq('user_id', user?.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setProperties(data || []);
+      const data = await mockApi.getProperties(user?.id);
+      setProperties(data);
     } catch (error) {
       console.error('Error loading properties:', error);
     } finally {

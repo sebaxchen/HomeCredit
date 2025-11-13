@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { mockApi } from '../../lib/mockApi';
 import { useAuth } from '../../contexts/AuthContext';
 import { X } from 'lucide-react';
 
@@ -33,12 +33,11 @@ export function PropertyForm({ onClose, onSuccess }: PropertyFormProps) {
     setLoading(true);
 
     try {
-      const { error: insertError } = await supabase.from('property_units').insert({
-        ...formData,
-        user_id: user?.id,
-      });
+      if (!user?.id) {
+        throw new Error('No se encontró un usuario activo');
+      }
 
-      if (insertError) throw insertError;
+      await mockApi.createProperty(user.id, formData);
 
       onSuccess();
       onClose();

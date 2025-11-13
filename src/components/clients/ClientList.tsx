@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { mockApi } from '../../lib/mockApi';
 import { useAuth } from '../../contexts/AuthContext';
 import { Client } from '../../types/database';
 import { User, Mail, Phone, DollarSign } from 'lucide-react';
@@ -15,14 +15,8 @@ export function ClientList() {
 
   const loadClients = async () => {
     try {
-      const { data, error } = await supabase
-        .from('clients')
-        .select('*')
-        .eq('user_id', user?.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setClients(data || []);
+      const data = await mockApi.getClients(user?.id);
+      setClients(data);
     } catch (error) {
       console.error('Error loading clients:', error);
     } finally {
